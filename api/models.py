@@ -13,7 +13,7 @@ class CustomUser(AbstractUser):
 
     email = models.EmailField(unique=True)
     profile_picture_url = models.URLField(blank=True, null=True)
-    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES)
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default="customer")
 
     def __str__(self):
         return self.email
@@ -35,13 +35,15 @@ class Category(models.Model):
     def save(self, *args, **kwargs):
 
         if not self.slug:
-            self.slug = slugify(self.name)
-            unique_slug = self.slug
+            base_slug = slugify(self.name)
+            slug = base_slug
             counter = 1
-            if Product.objects.filter(slug=unique_slug).exists():
-                unique_slug = f'{self.slug}-{counter}'
+
+            while Category.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
                 counter += 1
-            self.slug = unique_slug
+
+            self.slug = slug
         
         super().save(*args, **kwargs)
 
@@ -61,13 +63,15 @@ class Product(models.Model):
     def save(self, *args, **kwargs):
 
         if not self.slug:
-            self.slug = slugify(self.name)
-            unique_slug = self.slug
+            base_slug = slugify(self.name)
+            slug = base_slug
             counter = 1
-            if Product.objects.filter(slug=unique_slug).exists():
-                unique_slug = f'{self.slug}-{counter}'
+
+            while Product.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
                 counter += 1
-            self.slug = unique_slug
+
+            self.slug = slug
         
         super().save(*args, **kwargs)
 
@@ -134,7 +138,7 @@ class Order(models.Model):
     stripe_checkout_id = models.CharField(max_length=255, unique=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=10)
-    customer_email = models.EmailField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,)
     status = models.CharField(max_length=20, choices=[("Pending", "Pending"), ("Paid", "Paid")])
     created_at = models.DateTimeField(auto_now_add=True)
 
