@@ -6,11 +6,23 @@ from django.contrib.auth.models import AbstractUser
 # Create your models here.
 
 class CustomUser(AbstractUser):
+    USER_TYPE_CHOICES = (
+        ("customer", "Customer"),
+        ("business", "Business"),
+    )
+
     email = models.EmailField(unique=True)
     profile_picture_url = models.URLField(blank=True, null=True)
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES)
 
     def __str__(self):
         return self.email
+
+    def is_customer(self):
+        return self.user_type == "customer"
+
+    def is_business(self):
+        return self.user_type == "business"
 
 class Category(models.Model):
     name = models.CharField(max_length=100)
@@ -34,6 +46,7 @@ class Category(models.Model):
         super().save(*args, **kwargs)
 
 class Product(models.Model):
+    owner = models.ForeignKey( settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="products")
     name = models.CharField(max_length=100)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
