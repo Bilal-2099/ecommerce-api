@@ -14,6 +14,8 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
     profile_picture_url = models.URLField(blank=True, null=True)
     user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default="customer")
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["username"]
 
     def __str__(self):
         return self.email

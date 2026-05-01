@@ -19,6 +19,11 @@ from django.views.decorators.csrf import csrf_exempt
 
 # User = get_user_model()
 
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+class CustomTokenView(TokenObtainPairView):
+    serializer_class = CustomTokenSerializer
+
 class IsBusinessUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.is_business()
@@ -33,6 +38,9 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
     serializer_class = UserSerializer
+
+    def get_queryset(self):
+        return CustomUser.objects.filter(id=self.request.user.id)
 
     def get_permissions(self):
         if self.action == "create":
@@ -59,6 +67,9 @@ class CartViewSet(viewsets.ModelViewSet):
     queryset = Cart.objects.all()
     serializer_class = CartSerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        return Cart.objects.filter(user=self.request.user)
 
 class CartItemViewSet(viewsets.ModelViewSet):
     queryset = CartItem.objects.all()

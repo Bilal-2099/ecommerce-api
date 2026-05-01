@@ -1,1 +1,38 @@
 Make CRUD for product only for business user
+
+Product rating Auto-Update
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.db.models import Avg
+
+@receiver(post_save, sender=Review)
+@receiver(post_delete, sender=Review)
+def update_product_rating(sender, instance, **kwargs):
+    product = instance.product
+    reviews = product.reviews.all()
+
+    avg = reviews.aggregate(Avg('rating'))['rating__avg'] or 0
+    count = reviews.count()
+
+    ProductRating.objects.update_or_create(
+        product=product,
+        defaults={
+            'average_rating': avg,
+            'total_reviews': count
+        }
+    )
+
+For Views:
+serializer = ProductSerializer(data=request.data, context={"request": request})
+
+ from api.models import CustomUser
+>>> user = CustomUser.objects.get(email="test@example.com")
+>>> print(user.password)
+123456
+>>> user.set_password("123456")
+>>> user.save()
+>>> user.is_active
+False
+>>> user.is_active = True
+>>> user.save()
+>>> exit()

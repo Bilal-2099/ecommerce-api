@@ -4,10 +4,10 @@ from .views import *
 
 router = DefaultRouter()
 
-router.register("users", UserViewSet, basename="user")
-router.register("categories", CategoryViewSet, basename="category")
-router.register("products", ProductViewSet, basename="product")
-router.register("carts", CartViewSet, basename="cart")
+router.register("users", UserViewSet, basename="user") #To register User
+router.register("categories", CategoryViewSet, basename="category") #No auth needed
+router.register("products", ProductViewSet, basename="product") #No auth needed
+router.register("carts", CartViewSet, basename="cart") 
 router.register("cart-items", CartItemViewSet, basename='cart-item')
 router.register("reviews", ReviewViewSet, basename='review')
 router.register("wishlist", WishlistViewSet, basename='wishlist')
