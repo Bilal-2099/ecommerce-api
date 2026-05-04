@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from django.db import transaction
 from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -32,6 +33,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = "__all__"
+        read_only_fields = ["owner"]
 
     def create(self, validated_data):
         user = self.context["request"].user
@@ -51,10 +53,14 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 class CartSerializer(serializers.ModelSerializer):
     cartitems = CartItemSerializer(many=True, read_only=True)
+    total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
-        fields = ["id", "cart_code", "cartitems", "created_at", "updated_at"]
+        fields = ["id", "cartitems", "total_price", "created_at", "updated_at"]
+
+    def get_total_price(self, obj):
+        return sum(item.product.price * item.quantity for item in obj.cartitems.all())
 
 class ReviewSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source="user.username")
@@ -67,6 +73,12 @@ class ReviewSerializer(serializers.ModelSerializer):
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
 
+    def validate(self, data):
+        user = self.context["request"].user
+        if Review.objects.filter(user=user, product=data["product"]).exists():
+            raise serializers.ValidationError("You already reviewed this product")
+        return data
+
 class WishlistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wishlist
@@ -75,6 +87,12 @@ class WishlistSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
+
+    def validate(self, data):
+        user = self.context["request"].user
+        if Wishlist.objects.filter(user=user, product=data["product"]).exists():
+            raise serializers.ValidationError("You already wishlisted this product")
+        return data
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.ReadOnlyField(source="product.name")
@@ -89,15 +107,47 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = "__all__"
+        read_only_fields = ["status", "amount", "user", "stripe_checkout_id"]
 
     def create(self, validated_data):
+
         items_data = validated_data.pop("items")
         user = self.context["request"].user
 
-        order = Order.objects.create(user=user, **validated_data)
+        total_amount = 0
 
-        for item in items_data:
-            OrderItem.objects.create(order=order, **item)
+        with transaction.atomic():
+            order = Order.objects.create(
+                user=user,
+                status="Pending",
+                amount=0,
+                **validated_data
+            )
+
+            for item in items_data:
+                product = item["product"]
+                quantity = item["quantity"]
+
+                product.refresh_from_db()
+
+                if product.stock < quantity:
+                    raise serializers.ValidationError(
+                        f"Not enough stock for {product.name}"
+                    )
+
+                product.stock -= quantity
+                product.save()
+
+                total_amount += product.price * quantity
+
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=quantity
+                )
+
+            order.amount = total_amount
+            order.save()
 
         return order
 

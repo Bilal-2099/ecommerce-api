@@ -1,4 +1,5 @@
 import stripe 
+from django.db.models import Avg, Count
 from django.conf import settings
 from django.shortcuts import render
 from django.contrib.auth import get_user_model
@@ -40,6 +41,8 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
 
     def get_queryset(self):
+        if self.request.user.is_staff:
+            return CustomUser.objects.all()
         return CustomUser.objects.filter(id=self.request.user.id)
 
     def get_permissions(self):
@@ -63,22 +66,103 @@ class ProductViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), IsOwnerOrReadOnly()]
         return [permissions.AllowAny()]
 
-class CartViewSet(viewsets.ModelViewSet):
-    queryset = Cart.objects.all()
-    serializer_class = CartSerializer
-    permission_classes = [permissions.AllowAny]
-
     def get_queryset(self):
-        return Cart.objects.filter(user=self.request.user)
+        queryset = Product.objects.all()
+
+        category = self.request.query_params.get("category")
+        if category:
+            queryset = queryset.filter(category__id=category)
+
+        return queryset
+
+class CartViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
 
 class CartItemViewSet(viewsets.ModelViewSet):
-    queryset = CartItem.objects.all()
     serializer_class = CartItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+        return CartItem.objects.filter(cart=cart)
+
+    def get_object(self):
+        obj = super().get_object()
+        if obj.cart.user != self.request.user:
+            raise PermissionDenied("Not your cart item")
+        return obj
+
+    def destroy(self, request):
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart.cartitems.all().delete()
+        return Response({"message": "Cart cleared"})
+        
+    def perform_create(self, serializer):
+        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+
+        product = serializer.validated_data["product"]
+        quantity = serializer.validated_data.get("quantity", 1)
+
+
+        if product.stock < quantity:
+            raise serializers.ValidationError("Not enough stock")
+
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            product=product,
+            defaults={"quantity": quantity}
+        )
+
+        if not created:
+            if product.stock < cart_item.quantity + quantity:
+                raise serializers.ValidationError("Exceeds available stock")
+
+            cart_item.quantity += quantity
+            cart_item.save()
+
+        serializer.instance = cart_item
+    
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        new_quantity = serializer.validated_data.get("quantity", instance.quantity)
+
+        available_stock = instance.product.stock + instance.quantity
+
+        if new_quantity > available_stock:
+            raise serializers.ValidationError("Not enough stock")
+
+        serializer.save()
 
 class ReviewViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        product = serializer.validated_data["product"]
+
+        if product.owner == self.request.user:
+            raise PermissionDenied("You cannot review your own product")
+
+        review = serializer.save(user=self.request.user)
+
+        stats = product.reviews.aggregate(
+            avg=Avg("rating"),
+            count=Count("id")
+        )
+
+        ProductRating.objects.update_or_create(
+            product=product,
+            defaults={
+                "average_rating": stats["avg"] or 0,
+                "total_reviews": stats["count"]
+            }
+        )
 
 class WishlistViewSet(viewsets.ModelViewSet):
     serializer_class = WishlistSerializer
@@ -93,6 +177,17 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user)
+
+    def validate_currency(self, value):
+        allowed = ["usd", "pkr"]
+        if value.lower() not in allowed:
+            raise serializers.ValidationError("Invalid currency")
+        return value
+
+    def validate(self, data):
+        if not data.get("items"):
+            raise serializers.ValidationError("Order must contain at least one item")
+        return data
 
 class CustomerAddressViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerAddressSerializer
