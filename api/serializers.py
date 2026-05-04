@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from django.db import transaction
 from .models import *
+from decimal import Decimal
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class CustomTokenSerializer(TokenObtainPairSerializer):
@@ -60,7 +61,7 @@ class CartSerializer(serializers.ModelSerializer):
         fields = ["id", "cartitems", "total_price", "created_at", "updated_at"]
 
     def get_total_price(self, obj):
-        return sum(item.product.price * item.quantity for item in obj.cartitems.all())
+        return Cart.objects.prefetch_related("cartitems__product")
 
 class ReviewSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source="user.username")
@@ -109,6 +110,17 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["status", "amount", "user", "stripe_checkout_id"]
 
+    def validate_currency(self, value):
+        allowed = ["usd", "pkr"]
+        if value.lower() not in allowed:
+            raise serializers.ValidationError("Invalid currency")
+        return value
+
+    def validate(self, data):
+        if not data.get("items"):
+            raise serializers.ValidationError("Order must contain at least one item")
+        return data
+
     def create(self, validated_data):
 
         items_data = validated_data.pop("items")
@@ -128,7 +140,7 @@ class OrderSerializer(serializers.ModelSerializer):
                 product = item["product"]
                 quantity = item["quantity"]
 
-                product.refresh_from_db()
+                product = Product.objects.select_for_update().get(id=product.id)
 
                 if product.stock < quantity:
                     raise serializers.ValidationError(
@@ -138,7 +150,7 @@ class OrderSerializer(serializers.ModelSerializer):
                 product.stock -= quantity
                 product.save()
 
-                total_amount += product.price * quantity
+                total_amount = Decimal("0.00")
 
                 OrderItem.objects.create(
                     order=order,

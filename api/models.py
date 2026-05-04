@@ -28,7 +28,7 @@ class CustomUser(AbstractUser):
 
 class Category(models.Model):
     name = models.CharField(max_length=100)
-    slug = models.SlugField(unique=True, blank=True)
+    slug = models.SlugField(unique=True, blank=True, db_index=True)
     image = models.FileField(upload_to="category_img", blank=True, null=True)
 
     def __str__(self):
@@ -51,10 +51,10 @@ class Category(models.Model):
 
 class Product(models.Model):
     owner = models.ForeignKey( settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="products")
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, db_index=True)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    slug = models.SlugField(unique=True, blank=True)
+    slug = models.SlugField(unique=True, blank=True, db_index=True)
     image = models.ImageField(upload_to="product_img", blank=True, null=True)
     featured = models.BooleanField(default=False)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, related_name="products",  blank=True, null=True)
@@ -145,7 +145,7 @@ class Wishlist(models.Model):
         return f"{self.user.username} - {self.product.name}"
 
 class Order(models.Model):
-    stripe_checkout_id = models.CharField(max_length=255, unique=True)
+    stripe_checkout_id = models.CharField(max_length=255, unique=True, blank=True, null=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=10)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,)
