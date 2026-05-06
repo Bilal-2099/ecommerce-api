@@ -1,3 +1,36 @@
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import update_session_auth_hash
+from .serializers import ChangePasswordSerializer
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import update_session_auth_hash
+from .serializers import ChangePasswordSerializer
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    if request.method == 'POST':
+        serializer = ChangePasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            if user.check_password(serializer.data.get('old_password')):
+                user.set_password(serializer.data.get('new_password'))
+                user.save()
+                update_session_auth_hash(request, user)  # To update session after password change
+                return Response({'message': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+            return Response({'error': 'Incorrect old password.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
 import stripe 
 from rest_framework.decorators import action
 from django.db.models import Avg, Count
@@ -58,7 +91,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 class IsOwner(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
-        return obj.user == request.user
+        if hasattr(obj, "user"):
+            return obj.user == request.user
+        if hasattr(obj, "owner"):
+            return obj.owner == request.user
+        return False
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -87,6 +124,9 @@ class ProductViewSet(viewsets.ModelViewSet):
 class CartViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_cart(self):
+        return Cart.objects.get_or_create(user=self.request.user)[0]
+
     def list(self, request):
         cart, _ = Cart.objects.get_or_create(user=request.user)
         serializer = CartSerializer(cart)
@@ -96,60 +136,66 @@ class CartItemViewSet(viewsets.ModelViewSet):
     serializer_class = CartItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_cart(self):
+        return Cart.objects.get_or_create(user=self.request.user)[0]
+
     def get_queryset(self):
-        cart, _ = Cart.objects.get_or_create(user=self.request.user)
-        return CartItem.objects.filter(cart=cart)
-
-    def get_object(self):
-        obj = super().get_object()
-        if obj.cart.user != self.request.user:
-            raise PermissionDenied("Not your cart item")
-        return obj
-
-    def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
+        return CartItem.objects.filter(cart__user=self.request.user)
 
     @action(detail=False, methods=["delete"])
     def clear(self, request):
-        cart, _ = Cart.objects.get_or_create(user=request.user)
-        cart.cartitems.all().delete()
-        return Response({"message": "Cart cleared"})
+        cart = self.get_cart()
+        deleted_count, _ = cart.cartitems.all().delete()
+        return Response({"message": f"{deleted_count} items removed"})
 
     def perform_create(self, serializer):
-        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+        cart = self.get_cart()
 
-        product = serializer.validated_data["product"]
-        quantity = serializer.validated_data.get("quantity", 1)
+        with transaction.atomic():
+            product = Product.objects.select_for_update().get(
+                id=serializer.validated_data["product"].id
+            )
 
+            quantity = serializer.validated_data.get("quantity", 1)
 
-        if product.stock < quantity:
-            raise serializers.ValidationError("Not enough stock")
+            if product.stock < quantity:
+                raise ValidationError("Not enough stock")
 
-        cart_item, created = CartItem.objects.get_or_create(
-            cart=cart,
-            product=product,
-            defaults={"quantity": quantity}
-        )
+            cart_item = (
+                CartItem.objects.select_for_update()
+                .filter(cart=cart, product=product)
+                .first()
+            )
 
-        if not created:
-            if product.stock < cart_item.quantity + quantity:
-                raise serializers.ValidationError("Exceeds available stock")
+            if cart_item:
+                if product.stock < cart_item.quantity + quantity:
+                    raise ValidationError("Exceeds available stock")
 
-            cart_item.quantity += quantity
-            cart_item.save()
+                cart_item.quantity += quantity
+                cart_item.save()
+            else:
+                cart_item = CartItem.objects.create(
+                    cart=cart,
+                    product=product,
+                    quantity=quantity
+                )
 
         serializer.instance = cart_item
-    
+
     def perform_update(self, serializer):
-        instance = self.get_object()
-        new_quantity = serializer.validated_data.get("quantity", instance.quantity)
+        with transaction.atomic():
+            instance = self.get_object()
 
-        available_stock = instance.product.stock + instance.quantity
+            product = Product.objects.select_for_update().get(id=instance.product.id)
 
-        if new_quantity > available_stock:
-            raise serializers.ValidationError("Not enough stock")
+            new_quantity = serializer.validated_data.get("quantity", instance.quantity)
 
-        serializer.save()
+            available_stock = product.stock + instance.quantity
+
+            if new_quantity > available_stock:
+                raise ValidationError("Not enough stock")
+
+            serializer.save()
 
 class ReviewViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
@@ -157,13 +203,19 @@ class ReviewViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def perform_create(self, serializer):
-        product = serializer.validated_data["product"]
-
-        if product.owner == self.request.user:
-            raise PermissionDenied("You cannot review your own product")
-
         review = serializer.save(user=self.request.user)
+        self.update_product_rating(review.product)
 
+    def perform_update(self, serializer):
+        review = serializer.save()
+        self.update_product_rating(review.product)
+
+    def perform_destroy(self, instance):
+        product = instance.product
+        instance.delete()
+        self.update_product_rating(product)
+
+    def update_product_rating(self, product):
         stats = product.reviews.aggregate(
             avg=Avg("rating"),
             count=Count("id")

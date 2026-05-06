@@ -1,3 +1,14 @@
+from rest_framework import serializers
+from django.db.models import F, Sum, DecimalField
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+class ResetPasswordEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from django.db import transaction
@@ -29,18 +40,22 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class ProductSerializer(serializers.ModelSerializer):
-    owner = serializers.ReadOnlyField(source="owner.email")
+    owner_email = serializers.ReadOnlyField(source="owner.email")
 
     class Meta:
         model = Product
-        fields = "__all__"
-        read_only_fields = ["owner"]
+        exclude = ["owner"]
 
     def create(self, validated_data):
-        user = self.context["request"].user
+        request = self.context.get("request")
+
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Authentication required")
+
+        user = request.user
 
         if not user.is_business():
-            raise serializers.ValidationError("Only business users can create products")
+            raise serializers.ValidationError("Only business users allowed")
 
         validated_data["owner"] = user
         return super().create(validated_data)
@@ -58,10 +73,16 @@ class CartSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Cart
-        fields = ["id", "cartitems", "total_price", "created_at", "updated_at"]
+        fields = ["id", "cartitems", "total_price"]
 
     def get_total_price(self, obj):
-        return Cart.objects.prefetch_related("cartitems__product")
+        result = obj.cartitems.aggregate(
+            total=Sum(
+                F("quantity") * F("product__price"),
+                output_field=DecimalField()
+            )
+        )
+        return result["total"] or 0
 
 class ReviewSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source="user.username")
@@ -91,71 +112,57 @@ class WishlistSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         user = self.context["request"].user
-        if Wishlist.objects.filter(user=user, product=data["product"]).exists():
-            raise serializers.ValidationError("You already wishlisted this product")
+        # if Wishlist.objects.filter(user=user, product=data["product"]).exists():
+        #     raise serializers.ValidationError("You already wishlisted this product")
         return data
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     product_name = serializers.ReadOnlyField(source="product.name")
+    price = serializers.ReadOnlyField()
 
     class Meta:
         model = OrderItem
-        fields = ["product", "product_name", "quantity"]
+        fields = ["product", "product_name", "quantity", "price"]
 
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True)
+    items = OrderItemSerializer(many=True, write_only=True)
 
     class Meta:
         model = Order
-        fields = "__all__"
-        read_only_fields = ["status", "amount", "user", "stripe_checkout_id"]
-
-    def validate_currency(self, value):
-        allowed = ["usd", "pkr"]
-        if value.lower() not in allowed:
-            raise serializers.ValidationError("Invalid currency")
-        return value
-
-    def validate(self, data):
-        if not data.get("items"):
-            raise serializers.ValidationError("Order must contain at least one item")
-        return data
+        fields = ["id", "items", "amount", "currency", "user"]
+        read_only_fields = ["user", "amount", "currency"]
 
     def create(self, validated_data):
-
         items_data = validated_data.pop("items")
         user = self.context["request"].user
 
-        total_amount = 0
+        total_amount = Decimal("0.00")
 
         with transaction.atomic():
             order = Order.objects.create(
                 user=user,
-                status="Pending",
                 amount=0,
+                currency="PKR",
                 **validated_data
             )
 
             for item in items_data:
-                product = item["product"]
-                quantity = item["quantity"]
+                product = Product.objects.select_for_update().get(id=item["product"].id)
 
-                product = Product.objects.select_for_update().get(id=product.id)
+                if product.stock < item["quantity"]:
+                    raise serializers.ValidationError("Not enough stock")
 
-                if product.stock < quantity:
-                    raise serializers.ValidationError(
-                        f"Not enough stock for {product.name}"
-                    )
-
-                product.stock -= quantity
+                product.stock -= item["quantity"]
                 product.save()
 
-                total_amount = Decimal("0.00")
+                total_amount += product.price * item["quantity"]
 
                 OrderItem.objects.create(
                     order=order,
                     product=product,
-                    quantity=quantity
+                    quantity=item["quantity"],
+                    price=product.price
                 )
 
             order.amount = total_amount
