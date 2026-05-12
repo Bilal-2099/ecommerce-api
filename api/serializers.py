@@ -1,5 +1,10 @@
 from rest_framework import serializers
 from django.db.models import F, Sum, DecimalField
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from .models import *
+from decimal import Decimal
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
@@ -9,12 +14,6 @@ class ResetPasswordEmailSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
 
-from django.contrib.auth import get_user_model
-from rest_framework import serializers
-from django.db import transaction
-from .models import *
-from decimal import Decimal
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class CustomTokenSerializer(TokenObtainPairSerializer):
     username_field = "email"

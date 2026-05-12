@@ -5,14 +5,23 @@ from rest_framework import status
 from django.contrib.auth import update_session_auth_hash
 from .serializers import ChangePasswordSerializer
 from django.db import transaction
-from rest_framework.exceptions import ValidationError
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+import stripe 
+from rest_framework.decorators import action
+from django.db.models import Avg, Count
+from django.conf import settings
+from django.shortcuts import render
+from django.contrib.auth import get_user_model
+from django.db.models import Q
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.auth import update_session_auth_hash
-from .serializers import ChangePasswordSerializer
+from rest_framework import viewsets, permissions
+from rest_framework.exceptions import PermissionDenied
+from .models import *
+from .serializers import *
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.exceptions import ValidationError
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -31,28 +40,13 @@ def change_password(request):
 
 
 
-import stripe 
-from rest_framework.decorators import action
-from django.db.models import Avg, Count
-from django.conf import settings
-from django.shortcuts import render
-from django.contrib.auth import get_user_model
-from django.db.models import Q
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework import viewsets, permissions
-from rest_framework.exceptions import PermissionDenied
-from .models import *
-from .serializers import *
-from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
+
 
 # Create your views here.
 # stripe.api_key = settings.STRIPE_SECRET_KEY
 # endpoint_secret = settings.WEBHOOK_SECRET
 
-# User = get_user_model()
+User = get_user_model()
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 
