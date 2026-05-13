@@ -108,13 +108,19 @@ SIMPLE_JWT={
 python manage.py migrate
 ```
 
-6. **Create a superuser (for admin access):**
+6. **Load dump data:**
+
+```bash
+python manage.py loaddata data.json
+```
+
+7. **Create a superuser (for admin access):**
 
 ```bash
 python manage.py createsuperuser
 ```
 
-7. **Start the development server:**
+8. **Start the development server:**
 
 ```bash
 python manage.py runserver
