@@ -18,7 +18,6 @@ class CustomUser(AbstractUser):
     REQUIRED_FIELDS = ["username"]
 
     def save(self, *args, **kwargs):
-        # Normalize email to avoid duplicates like TEST@gmail.com vs test@gmail.com
         self.email = self.email.lower()
         super().save(*args, **kwargs)
 
@@ -144,13 +143,6 @@ class Wishlist(models.Model):
 
 
 class Order(models.Model):
-    stripe_checkout_id = models.CharField(
-        max_length=255,
-        unique=True,
-        default=uuid.uuid4,
-        editable=False
-    )
-
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=10, blank=True)
 
