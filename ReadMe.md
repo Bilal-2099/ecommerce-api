@@ -35,7 +35,6 @@ Perfect for developers building **B2C e-commerce platforms**, **marketplaces**, 
 | **Language**   | Python 3.8+                                |
 | **Framework**  | Django 5.1.6                              |
 | **API**        | Django REST Framework 3.15.2              |
-| **Database**   | PostgreSQL (via psycopg2)                 |
 | **Authentication** | JWT (JSON Web Tokens)                   |
 | **Payments**   | Stripe API                                 |
 | **Media**      | Pillow (Image processing)                 |
@@ -51,7 +50,6 @@ Perfect for developers building **B2C e-commerce platforms**, **marketplaces**, 
 Before you begin, ensure you have the following installed:
 
 - Python 3.8+
-- PostgreSQL (or SQLite for development)
 - Docker (optional, for containerized deployment)
 - Git
 
@@ -269,8 +267,6 @@ ecommerce-api/
 | `SECRET_KEY`                 | Django secret key                                                           |
 | `DEBUG`                      | Set to `True` for development, `False` for production                        |
 | `DATABASE_URL`               | Database connection URL (PostgreSQL recommended)                            |
-| `STRIPE_SECRET_KEY`          | Stripe API secret key                                                        |
-| `STRIPE_WEBHOOK_SECRET`      | Stripe webhook secret for payment verification                               |
 | `ALLOWED_HOSTS`              | Comma-separated list of allowed hosts for production                          |
 
 ### Customization Options
