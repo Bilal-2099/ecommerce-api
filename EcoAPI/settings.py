@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'api',
     'django_rest_passwordreset',
     'rest_framework',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
     'corsheaders',
 
 ]
@@ -122,9 +124,20 @@ USE_TZ = True
 from datetime import timedelta
 
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'My App API',
+    'DESCRIPTION': 'Documentation for App 1',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_DIST': 'SIDECAR',  # Tells Swagger to use the sidecar app
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR',        # Tells ReDoc to use the sidecar app
 }
 
 SIMPLE_JWT = {
