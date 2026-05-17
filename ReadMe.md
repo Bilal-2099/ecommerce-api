@@ -36,7 +36,6 @@ Perfect for developers building **B2C e-commerce platforms**, **marketplaces**, 
 | **Framework**  | Django 5.1.6                              |
 | **API**        | Django REST Framework 3.15.2              |
 | **Authentication** | JWT (JSON Web Tokens)                   |
-| **Payments**   | Stripe API                                 |
 | **Media**      | Pillow (Image processing)                 |
 | **Deployment** | Gunicorn + ASGI (for production)         |
 | **Testing**    | Django Test Framework                     |
