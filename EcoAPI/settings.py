@@ -11,8 +11,9 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+from decouple import config
+import environ
 import os
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -87,11 +88,14 @@ WSGI_APPLICATION = 'EcoAPI.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('Database'),
+        'USER': config('Database_user'),
+        'PASSWORD': config('Database_pass'),
+        'HOST': config('Database_host',  default='localhost'),
+        'PORT': config('Database_port',  default='5432'),
     }
 }
-
 
 
 # Password validation
